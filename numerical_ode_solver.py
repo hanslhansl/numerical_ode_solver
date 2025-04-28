@@ -1,4 +1,6 @@
-﻿import scipy, re, sympy, numpy as np, sys, matplotlib.pyplot as plt
+﻿import scipy, re, sympy, numpy as np, sys, math, matplotlib.pyplot as plt
+
+
 
 class NumericalODESolver:
     """
@@ -139,6 +141,7 @@ class NumericalODESolver:
         self.bcs : list[str] = []
         if isinstance(bcs, str):
             bcs = (bcs, )
+        assert len(bcs) == self.highest_derivative, f"wrong number of boundary conditions ({len(bcs)}), should be {self.highest_derivative}"
         for bc in bcs:
             for match in re.findall(bc_pattern, bc):
                 assert len(match) == 2, f"could not parse bc: '{bc}'"
@@ -182,7 +185,7 @@ class NumericalODESolver:
 
         Parameters
         ----------
-        plot: If True, the solution is plotted after (and if) the calculation finished successfully.
+        plot: If True, the solution is plotted afterwards (if the calculation finished successfully).
         steps: The number of steps to use for the solver.
         kwargs: Additional keyword arguments to pass to scipy.integrate.solve_bvp().
         """
@@ -206,12 +209,9 @@ class NumericalODESolver:
         res += "def bc(ya, yb):\n"
         res += f"{wh}{", ".join(f"{self.target_derivative_python(order)}_a" for order in range(self.highest_derivative))} = ya\n"
         res += f"{wh}{", ".join(f"{self.target_derivative_python(order)}_b" for order in range(self.highest_derivative))} = yb\n"
-        if (len(self.bcs) == 1):
-            res += f"{wh}return {self.bcs[0]}\n\n"
-        else:
-            res += f"{wh}return [\n{wh * 2}"
-            res += f",\n{wh * 2}".join(self.bcs)
-            res += f"\n{wh}]\n\n"
+        res += f"{wh}return (\n{wh * 2}"
+        res += f",\n{wh * 2}".join(self.bcs)
+        res += f"\n{wh})\n\n"
 
         res += f"{self.parameter} = np.linspace({self.interval[0]}, {self.interval[1]}, {steps})    # from, to, steps\n"
         res += f"initial_guess = np.zeros(({self.highest_derivative}, {self.parameter}.size))\n"
@@ -222,7 +222,7 @@ class NumericalODESolver:
         res += f"solution = scipy.integrate.solve_bvp(system, bc, {self.parameter}, initial_guess, {', '.join(f'{key}={val}' for key, val in kwargs.items())})\n"
         
         res += f"{self.parameter}_sol = solution.x\n"
-        res += f"{", ".join(f"{self.target_derivative_python(order)}_sol" for order in range(self.highest_derivative))} = solution.y\n"
+        res += f"{" ".join(f"{self.target_derivative_python(order)}_sol," for order in range(self.highest_derivative))} = solution.y\n"
 
         res += "if not solution.success:\n"
         res += wh + "print(f\"{solution.message = }\")\n\n"
@@ -295,19 +295,7 @@ class NumericalODESolver:
         return solution.x, solution.y
 
 
-
 if __name__ == "__main__":
-    import math
-
-    ode = NumericalODESolver(ode="y'+np.sin(y)=0",
-                                 interval=(0, 10),
-                                 bcs=("y(0)=0"),
-                                 initial_guess=(0))
-
-
-    exec(ode.generate_scipy_string(steps = 2000, max_nodes=50000, verbose=2))
-
-    sys.exit()
     Reynolds = lambda v: v * d / nu
     def λ_impl(Re):
         Re = max(Re, 0.001)
