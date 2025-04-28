@@ -1,4 +1,4 @@
-﻿import scipy, re, sympy, numpy as np
+﻿import scipy, re, sympy, numpy as np, sys, matplotlib.pyplot as plt
 
 class NumericalODESolver:
     """
@@ -194,18 +194,24 @@ class NumericalODESolver:
         res += f"def system({self.parameter}, y):\n"
         res += f"{wh}{", ".join(self.target_derivative_python(order) for order in range(self.highest_derivative))} = y\n"
         
-        res += f"{wh}return [\n"
-        for order in range(1, self.highest_derivative):
-            res += f"{wh * 2}{self.target_derivative_python(order)},\n"
-        res += f"{wh * 2}{self.dequation}\n"
-        res += f"{wh}]\n\n"
+        if self.highest_derivative == 1:
+            res += f"{wh}return {self.dequation}\n\n"
+        else:
+            res += f"{wh}return [\n"
+            for order in range(1, self.highest_derivative):
+                res += f"{wh * 2}{self.target_derivative_python(order)},\n"
+            res += f"{wh * 2}{self.dequation}\n"
+            res += f"{wh}]\n\n"
 
         res += "def bc(ya, yb):\n"
         res += f"{wh}{", ".join(f"{self.target_derivative_python(order)}_a" for order in range(self.highest_derivative))} = ya\n"
         res += f"{wh}{", ".join(f"{self.target_derivative_python(order)}_b" for order in range(self.highest_derivative))} = yb\n"
-        res += f"{wh}return [\n{wh * 2}"
-        res += f",\n{wh * 2}".join(self.bcs)
-        res += f"\n{wh}]\n\n"
+        if (len(self.bcs) == 1):
+            res += f"{wh}return {self.bcs[0]}\n\n"
+        else:
+            res += f"{wh}return [\n{wh * 2}"
+            res += f",\n{wh * 2}".join(self.bcs)
+            res += f"\n{wh}]\n\n"
 
         res += f"{self.parameter} = np.linspace({self.interval[0]}, {self.interval[1]}, {steps})    # from, to, steps\n"
         res += f"initial_guess = np.zeros(({self.highest_derivative}, {self.parameter}.size))\n"
@@ -289,9 +295,19 @@ class NumericalODESolver:
         return solution.x, solution.y
 
 
+
 if __name__ == "__main__":
     import math
 
+    ode = NumericalODESolver(ode="y'+np.sin(y)=0",
+                                 interval=(0, 10),
+                                 bcs=("y(0)=0"),
+                                 initial_guess=(0))
+
+
+    exec(ode.generate_scipy_string(steps = 2000, max_nodes=50000, verbose=2))
+
+    sys.exit()
     Reynolds = lambda v: v * d / nu
     def λ_impl(Re):
         Re = max(Re, 0.001)
