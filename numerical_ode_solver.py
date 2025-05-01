@@ -7,12 +7,6 @@ class NumericalODESolver:
     A wrapper around scipy.integrate.solve_bvp() to solve a boundary value problem (BVP) for an ordinary differential equation (ODE).
     See https://docs.scipy.org/doc/scipy/reference/generated/scipy.integrate.solve_bvp.html for details.
     It simplifies the process of defining the ODE, boundary conditions and initial guess.
-
-    Method generate_scipy_string() generates a string containing python code which, if executed, solves the BVP.
-    Either plug it into exec() or copy it to a new file and run it. This is the recommended way if performance is critical.
-
-    Method run_scipy() runs the BVP solver directly and returns the solution.
-    Because it relies on repeated calls to eval()/exec() it has inferior performance.
     """
     identifier_pattern = r"[a-zA-Z_]\w*"
     derivative_leibnitz_notation = rf"\bd({identifier_pattern})/d({identifier_pattern})\b"
@@ -24,9 +18,9 @@ class NumericalODESolver:
     def __init__(self, ode : str,
                  interval : tuple[str | int | float, str | int | float],
                  bcs : str | tuple[str,...],
-                 initial_guess : None | tuple[str | int | float,...] = None,
-                 params : None | tuple[str,...] = None,
-                 params_initial_guess : None | tuple[str | int | float,...] = None):
+                 initial_guess : None | str | int | float | tuple[str | int | float,...] = None,
+                 params : None | str | tuple[str,...] = None,
+                 params_initial_guess : None | str | int | float | tuple[str | int | float,...] = None):
         """
         Regarding syntax
         --------------------
@@ -98,7 +92,7 @@ class NumericalODESolver:
             self.highest_derivative = max(self.highest_derivative, order)
             
             nonlocal ode
-            ode = ode.replace(full_match, self.target_derivative_python(order), 1)
+            ode = ode.replace(full_match, self._target_derivative_python(order), 1)
 
         # replace derivatives with python syntax
         for match in re.finditer(self.derivative_leibnitz_notation, ode):
@@ -132,7 +126,7 @@ class NumericalODESolver:
         lhs_str, rhs_str = ode.split('=')
         lhs = sympy.parse_expr(lhs_str.strip())
         rhs = sympy.parse_expr(rhs_str.strip())
-        sympy_dequation = sympy.solve(lhs - rhs, self.target_derivative_python(self.highest_derivative))
+        sympy_dequation = sympy.solve(lhs - rhs, self._target_derivative_python(self.highest_derivative))
         assert len(sympy_dequation) == 1, f"could not parse ode: '{ode}' ({len(sympy_dequation)})"
         ode = str(sympy_dequation[0])
 
@@ -147,21 +141,33 @@ class NumericalODESolver:
 
         # initial guess
         if initial_guess is None:
-            initial_guess = (0, ) * self.highest_derivative
+            initial_guess = 0
+        if not isinstance(initial_guess, tuple):
+            initial_guess = [initial_guess]
+        initial_guess = list(initial_guess)
+        if len(initial_guess) < self.highest_derivative:
+            initial_guess.extend([0] * (self.highest_derivative - len(initial_guess)))
         assert len(initial_guess) == self.highest_derivative, f"wrong number of initial guesses ({len(initial_guess)}), should be {self.highest_derivative}"
-        self.initial_guess = initial_guess
+        self.initial_guess = tuple(initial_guess)
 
         # parameters
         if params is None:
             params = ()
+        elif not isinstance(params, tuple):
+            params = (params, )
         self.parameters = params
         self.k = len(self.parameters)
 
         # initial guess for parameters
         if params_initial_guess is None:
-            params_initial_guess = (0, ) * self.k
+            params_initial_guess = 0
+        if not isinstance(params_initial_guess, tuple):
+            params_initial_guess = [params_initial_guess]
+        params_initial_guess = list(params_initial_guess)
+        if len(params_initial_guess) < self.k:
+            params_initial_guess.extend([0] * (self.k - len(params_initial_guess)))
         assert len(params_initial_guess) == self.k, f"wrong number of initial guesses for parameters ({len(params_initial_guess)}), should be {self.k}"
-        self.params_initial_guess = params_initial_guess
+        self.params_initial_guess = tuple(params_initial_guess)
 
         # boundary conditions
         bc_pattern = fr"\b{self.target_name}('*)\((\w+)\)"
@@ -181,19 +187,19 @@ class NumericalODESolver:
                     postfix = "b"
                 else:
                     raise ValueError(f"boundary condition parameter {parameter} is not an endpoint of interval {self.interval}")
-                bc = bc.replace(f"{self.target_name}{'\''*derivative_order}({parameter})", f"{self.target_derivative_python(derivative_order)}_{postfix}", 1)
+                bc = bc.replace(f"{self.target_name}{'\''*derivative_order}({parameter})", f"{self._target_derivative_python(derivative_order)}_{postfix}", 1)
             lhs, rhs = bc.split("=")
             self.bcs.append(f"{lhs.strip()} - ({rhs.strip()})")
 
         pass
 
-    def target_derivative_math(self, order : int):
+    def _target_derivative_math(self, order : int):
         if order == 0:
             return f"{self.target_name}({self.variable})"
         elif order == 1:
             return f"d{self.target_name}/d{self.variable}"
         return f"d^{order}{self.target_name}/d{self.variable}^{order}"
-    def target_derivative_python(self, order : int):
+    def _target_derivative_python(self, order : int):
         if order == 0:
             return self.target_name
         elif order == 1:
@@ -203,6 +209,8 @@ class NumericalODESolver:
     def generate_scipy_string(self, plot = True, steps = 50, **kwargs):
         """
         Generates a string containing python code which, if executed, solves the BVP.
+        Either plug it into exec() or copy it to a new file and run it.
+        If exec() is used the result of solve_bvp() can be accessed as 'solution'.
 
         Parameters
         ----------
@@ -217,43 +225,40 @@ class NumericalODESolver:
         
         if self.k > 0:
             res += f"def system({self.variable}, y, p):\n"
-            res += f"{wh}{', '.join(f'{p}' for p in self.parameters)} = p\n"
+            res += f"{wh}{' '.join(f'{p},' for p in self.parameters)} = p\n"
         else:
             res += f"def system({self.variable}, y):\n"
-        res += f"{wh}{", ".join(self.target_derivative_python(order) for order in range(self.highest_derivative))} = y\n"
-        
-        if self.highest_derivative == 1:
-            res += f"{wh}return {self.dequation}\n\n"
-        else:
-            res += f"{wh}return [\n"
-            for order in range(1, self.highest_derivative):
-                res += f"{wh * 2}{self.target_derivative_python(order)},\n"
-            res += f"{wh * 2}{self.dequation}\n"
-            res += f"{wh}]\n\n"
+        res += f"{wh}{' '.join(f'{self._target_derivative_python(order)},' for order in range(self.highest_derivative))} = y\n"
+
+        res += f"{wh}return [\n"
+        for order in range(1, self.highest_derivative):
+            res += f"{wh * 2}{self._target_derivative_python(order)},\n"
+        res += f"{wh * 2}{self.dequation}\n"
+        res += f"{wh}]\n\n"
 
         if self.k > 0:
             res += "def bc(ya, yb, p):\n"
-            res += f"{wh}{', '.join(f'{p}' for p in self.parameters)} = p\n"
+            res += f"{wh}{' '.join(f'{p},' for p in self.parameters)} = p\n"
         else:
             res += "def bc(ya, yb):\n"
-        res += f"{wh}{", ".join(f"{self.target_derivative_python(order)}_a" for order in range(self.highest_derivative))} = ya\n"
-        res += f"{wh}{", ".join(f"{self.target_derivative_python(order)}_b" for order in range(self.highest_derivative))} = yb\n"
-        res += f"{wh}return (\n{wh * 2}"
+        res += f"{wh}{" ".join(f"{self._target_derivative_python(order)}_a," for order in range(self.highest_derivative))} = ya\n"
+        res += f"{wh}{" ".join(f"{self._target_derivative_python(order)}_b," for order in range(self.highest_derivative))} = yb\n"
+        res += f"{wh}return [\n{wh * 2}"
         res += f",\n{wh * 2}".join(self.bcs)
-        res += f"\n{wh})\n\n"
+        res += f"\n{wh}]\n\n"
 
         res += f"{self.variable} = np.linspace({self.interval[0]}, {self.interval[1]}, {steps})    # from, to, steps\n"
         res += f"initial_guess = np.zeros(({self.highest_derivative}, {self.variable}.size))\n"
         for order, guess in enumerate(self.initial_guess):
-            res += f"initial_guess[{order}] = {guess}    # initial guess for {self.target_derivative_math(order)}\n"
+            res += f"initial_guess[{order}] = {guess}    # initial guess for {self._target_derivative_math(order)}\n"
         if self.k > 0:
-            res += f"parameters_initial_guess = \n"
+            res += f"parameters_initial_guess = [{', '.join(f'{p}' for p in self.params_initial_guess)}]\n"
         res += "\n"
 
-        res += f"solution = scipy.integrate.solve_bvp(system, bc, {self.variable}, initial_guess, {', '.join(f'{key}={val}' for key, val in kwargs.items())})\n"
+        res += f"solution = scipy.integrate.solve_bvp(system, bc, {self.variable}, initial_guess, {"parameters_initial_guess, " if self.k > 0 else ""} {', '.join(f'{key}={val}' for key, val in kwargs.items())})\n"
         
         res += f"{self.variable}_sol = solution.x\n"
-        res += f"{" ".join(f"{self.target_derivative_python(order)}_sol," for order in range(self.highest_derivative))} = solution.y\n"
+        res += f"{" ".join(f"{self._target_derivative_python(order)}_sol," for order in range(self.highest_derivative))} = solution.y\n"
 
         res += "if not solution.success:\n"
         res += wh + "print(f\"{solution.message = }\")\n\n"
@@ -264,9 +269,9 @@ class NumericalODESolver:
 
             for order in range(self.highest_derivative):
                 res += f"{wh}plt.subplot(1, {self.highest_derivative}, {order + 1})\n"
-                res += f"{wh}plt.plot({self.variable}_sol, {self.target_derivative_python(order)}_sol, label=\"{self.target_derivative_math(order)}\")\n"
+                res += f"{wh}plt.plot({self.variable}_sol, {self._target_derivative_python(order)}_sol, label=\"{self._target_derivative_math(order)}\")\n"
                 res += f"{wh}plt.xlabel(\"{self.variable}\")\n"
-                res += f"{wh}plt.ylabel(\"{self.target_derivative_math(order)}\")\n"
+                res += f"{wh}plt.ylabel(\"{self._target_derivative_math(order)}\")\n"
                 res += f"{wh}plt.legend()\n\n"
 
             res += wh + "plt.tight_layout()\n"
@@ -274,59 +279,19 @@ class NumericalODESolver:
 
         return res
 
-    def run_scipy(self, plot = True, steps = 50, **kwargs):
-        """
-        Runs the scipy solver and returns the solution.
-
-        Parameters
-        ----------
-        plot: If True, the solution is plotted after (and if) the calculation finished successfully.
-        steps: The number of steps to use for the solver.
-        kwargs: Additional keyword arguments to pass to scipy.integrate.solve_bvp().
-        """
-
-        def system(x, y):
-            locals_dict = {self.target_derivative_python(order) : y[order] for order in range(self.highest_derivative)}
-            locals_dict[self.parameter] = x
-            return [
-                *y[1:],
-                eval(self.dequation, None, locals_dict)
-                ]
-
-        def bc(ya, yb):
-            locals_dict = {f"{self.target_derivative_python(order)}_a" : ya[order] for order in range(self.highest_derivative)}
-            locals_dict.update({f"{self.target_derivative_python(order)}_b" : yb[order] for order in range(self.highest_derivative)})
-            return [eval(bc, None, locals_dict) for bc in self.bcs]
-
-        x_values = np.linspace(*self.interval, steps)    # from, to, steps
-        initial_guess = np.zeros((self.highest_derivative, x_values.size))  # Initial guess for y, y', ...
-        for order, guess in enumerate(self.initial_guess):    # initial guess
-            if isinstance(guess, str):
-                initial_guess[order] = eval(guess, None, {self.parameter : x_values})
-            else:
-                initial_guess[order] = guess
-
-        solution = scipy.integrate.solve_bvp(system, bc, x_values, initial_guess, **kwargs)
-        if not solution.success:
-            print(f"{solution.message = }")
-
-        elif plot == True:
-            plt.figure()
-
-            for order in range(self.highest_derivative):
-                plt.subplot(1, self.highest_derivative, order + 1)
-                plt.plot(solution.x, solution.y[order], label=self.target_derivative_math(order))
-                plt.xlabel(self.parameter)
-                plt.ylabel(self.target_derivative_math(order))
-                plt.legend()
-
-            plt.tight_layout()
-            plt.show()
-
-        return solution.x, solution.y
 
 
 if __name__ == "__main__":
+    n = 2000
+    
+    init = np.vectorize(lambda x: 1 if x < 0.5 else -1)
+    ode = NumericalODESolver("y'' + k**2 * y = 0", (0, 1), ("y(0)=0", "y(1)=0", "y'(0) = k"), "init(x)", "k", 6)
+
+    print(ode.generate_scipy_string(steps = n, max_nodes=50000, verbose=2))
+    exec(ode.generate_scipy_string(steps = n, max_nodes=50000, verbose=2))
+    
+
+    sys.exit()
     Reynolds = lambda v: v * d / nu
     def λ_impl(Re):
         Re = max(Re, 0.001)
@@ -336,7 +301,6 @@ if __name__ == "__main__":
         return scipy.optimize.fsolve(iterative, 0.02)[0]
     λ = np.vectorize(λ_impl)
 
-    n = 2000
     nozzles = 100
     pumpendruck = 4*10**5
     g = 9.81
@@ -361,7 +325,7 @@ if __name__ == "__main__":
 
     ode = NumericalODESolver(ode="v*v' = -K_p*dv/dx*d2v/dx2-λ(Reynolds(v))*v**2/2*L/d+d/Re_0/L*v''-K_g*math.sin(alpha)",
                                  interval=(0, 1),
-                                 bcs=("v(1)=0", "K_p * v'(0)**2 = pumpendruck/(rho*U**2/2)", "v'(1)=0"),
+                                 bcs=("v(1)=0", "K_p * v'(0)**2 = pumpendruck/(rho*U**2/2)", "v(0)=0.7"),#
                                  initial_guess=("U - U * x", -U),
                                  params=("p",))
 
