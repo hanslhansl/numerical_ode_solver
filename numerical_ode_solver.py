@@ -24,7 +24,9 @@ class NumericalODESolver:
     def __init__(self, ode : str,
                  interval : tuple[str | int | float, str | int | float],
                  bcs : str | tuple[str,...],
-                 initial_guess : str | int | float | tuple[str | int | float,...] = 0):
+                 initial_guess : None | tuple[str | int | float,...] = None,
+                 params : None | tuple[str,...] = None,
+                 params_initial_guess : None | tuple[str | int | float,...] = None):
         """
         Regarding syntax
         --------------------
@@ -36,53 +38,60 @@ class NumericalODESolver:
         - Constants, variables, and function calls are supported, but they must be available in the current scope - typically as global definitions.
 
         The exception to the python syntax rules is the target function: It is denoted as a valid python identifier like 'y', 'v', 'v1', 'v_1', 'foo', 'bar' etc.
-        Invalid examples: 'y(x)' (the parameter 'x' must not be specified with the function), '1y' (starts with digit).
+        Invalid examples: 'y(x)' (the variable 'x' must not be specified with the function), '1y' (starts with a digit).
 
         There are two ways to denote the derivative of the target function:
-        - Leibnitz notation: The derivative of 'y' by parameter 'x' is denoted as 'dy/dx'. The second derivative is denoted either as 'd2y/dx2' or 'd^2y/dx^2' etc.
-          Invalid examples: 'dy/dx(x)' (the parameter 'x' must not be specified with the derivative), 'd2y/d3x' (incorrect derivative order)
-          The name of the parameter has to be a valid python identifier like 'x', 'x1', 'z' etc.
+        - Leibnitz notation: The derivative of 'y' by variable 'x' is denoted as 'dy/dx'. The second derivative is denoted either as 'd2y/dx2' or 'd^2y/dx^2' etc.
+          Invalid examples: 'dy/dx(x)' (the variable 'x' must not be specified with the derivative), 'd2y/d3x' (incorrect derivative order)
+          The name of the variable has to be a valid python identifier like 'x', 'x1', 'z' etc.
         - Prime notation: The derivatives of 'y' are denoted as y', y'', y''' etc.
-          Invalid example: "y'(x)" (the parameter 'x' must not be specified with the derivative)
-          If only prime notation is used 'x' is used as the default parameter name.
+          Invalid example: "y'(x)" (the variable 'x' must not be specified with the derivative)
+          If only prime notation is used 'x' is used as the default variable name.
           
         Parameters
         ----------
         ode: A string containing an ordinary differential equation.
             See above for syntax rules.
-            E.g.: "y' = 2 * y + 1", 'dy/dx = 2 * y + 1', "y + y' + d^2y/dx^2 = sin(x)"
+            E.g.: "y' = 2 * y + 1", "dy/dx = 2 * y + 1", "y + y' + d^2y/dx^2 = sin(x)"
             
         interval: The interval to solve the ode in.
-            E.g.: (0, 1), ('a', 'b')
+            E.g.: (0, 1); ("a", "b")
 
         bcs: The boundary condition(s) for the target function and all but its highest order derivative.
             See above for general syntax rules.
             A bc must be an equation containing the target function and/or any of its derivatives (using prime notation) evaluated at one of the interval boundaries.
             Valid examples for interval (0, 1): "y(1)=5", "K_p * v'(0)**2 = 2 * p / (r * U**2) - y(0)"
-            Invalid examples: 'y=5' (no boundary specified), 'dy/dx(1)=0' (can't use Leibnitz notation for bcs)
+            Invalid examples: "y=5" (no boundary specified), "dy/dx(1)=0" (can't use Leibnitz notation for bcs)
 
         initial_guess: The initial guess for the target function and all but its highest order derivative.
             See above for general syntax rules.
-            Can make use of the target function's parameter (e.g. 'x'). The parameter will have type 'numpy.ndarray'.
+            Can make use of the target function's variable (e.g. 'x'). The variable will have type 'numpy.ndarray'.
             Therefor, functions from module 'numpy' should be prefered over those from module 'math'.
             If no initial guess is provided it is set to 0 for the target and all derivatives.
-            Valid examples for parameter 'x': 0, 17, 'x', 'x**2', 'U - U * x'
+            Valid examples for variable "x": (0, 17); ("x,); ("x**2", "U - U * x")
+
+        params: Names of the unknown parameters. If None (default), it is assumed that the problem doesn’t depend on any parameters.
+            E.g.: ("a", "b", "c")
+
+        params_initial_guess: The initial guess for the unknown parameters (if any).
+            If no initial guess is provided it is set to 0 for all parameters.
+            E.g.: (0, 1, 2)
         """
         
         self.target_name : str = None
-        self.parameter : str = None
+        self.variable : str = None
         self.highest_derivative : int = None
 
-        def set_fields(target, param, order, full_match):
+        def set_fields(target, var, order, full_match):
             full_match = full_match.group()
             if self.target_name is None:
                 self.target_name = target
             assert self.target_name == target, f"target name '{self.target_name}' does not match '{target}' in '{full_match}'"
             
-            if param is not None:
-                if self.parameter is None:
-                    self.parameter = param
-                assert self.parameter == param, f"parameter name '{self.parameter}' does not match '{param}' in '{full_match}'"
+            if var is not None:
+                if self.variable is None:
+                    self.variable = var
+                assert self.variable == var, f"variable name '{self.variable}' does not match '{var}' in '{full_match}'"
 
             if self.highest_derivative is None:
                 self.highest_derivative = order
@@ -93,18 +102,18 @@ class NumericalODESolver:
 
         # replace derivatives with python syntax
         for match in re.finditer(self.derivative_leibnitz_notation, ode):
-            target, param = match.groups()
-            set_fields(target, param, 1, match)
+            target, var = match.groups()
+            set_fields(target, var, 1, match)
         for match in re.finditer(self.higher_derivative_leibnitz_notation_a, ode):
-            order, target, param_order = match.groups()
-            assert param_order.endswith(order), f"could not parse '{match.group()}'"
-            set_fields(target, param_order.removesuffix(order), int(order), match)
+            order, target, var_order = match.groups()
+            assert var_order.endswith(order), f"could not parse '{match.group()}'"
+            set_fields(target, var_order.removesuffix(order), int(order), match)
         for match in re.finditer(self.higher_derivative_leibnitz_notation_b, ode):
-            order1, target, param, order2 = match.groups()
+            order1, target, var, order2 = match.groups()
             assert order1 == order2, f"could not parse '{match.group()}'"
-            set_fields(target, param, int(order1), match)
-        if self.parameter is None:
-            self.parameter = "x"
+            set_fields(target, var, int(order1), match)
+        if self.variable is None:
+            self.variable = "x"
         for match in re.finditer(self.derivative_prime_notation, ode):
             target, apostrophes = match.groups()
             set_fields(target, None, len(apostrophes), match)
@@ -136,12 +145,30 @@ class NumericalODESolver:
         assert len(interval) == 2, f"the interval '{interval}' must consist of 2 endpoints"
         self.interval = interval
 
+        # initial guess
+        if initial_guess is None:
+            initial_guess = (0, ) * self.highest_derivative
+        assert len(initial_guess) == self.highest_derivative, f"wrong number of initial guesses ({len(initial_guess)}), should be {self.highest_derivative}"
+        self.initial_guess = initial_guess
+
+        # parameters
+        if params is None:
+            params = ()
+        self.parameters = params
+        self.k = len(self.parameters)
+
+        # initial guess for parameters
+        if params_initial_guess is None:
+            params_initial_guess = (0, ) * self.k
+        assert len(params_initial_guess) == self.k, f"wrong number of initial guesses for parameters ({len(params_initial_guess)}), should be {self.k}"
+        self.params_initial_guess = params_initial_guess
+
         # boundary conditions
         bc_pattern = fr"\b{self.target_name}('*)\((\w+)\)"
         self.bcs : list[str] = []
         if isinstance(bcs, str):
             bcs = (bcs, )
-        assert len(bcs) == self.highest_derivative, f"wrong number of boundary conditions ({len(bcs)}), should be {self.highest_derivative}"
+        assert len(bcs) == self.highest_derivative + self.k, f"wrong number of boundary conditions ({len(bcs)}), should be {self.highest_derivative + self.k}"
         for bc in bcs:
             for match in re.findall(bc_pattern, bc):
                 assert len(match) == 2, f"could not parse bc: '{bc}'"
@@ -158,26 +185,20 @@ class NumericalODESolver:
             lhs, rhs = bc.split("=")
             self.bcs.append(f"{lhs.strip()} - ({rhs.strip()})")
 
-        # initial guess
-        if not isinstance(initial_guess, tuple):
-            initial_guess = (initial_guess, ) * self.highest_derivative
-        assert len(initial_guess) == self.highest_derivative, f"wrong number of initial guesses ({len(initial_guess)}), should be {self.highest_derivative}"
-        self.initial_guess = initial_guess
-
         pass
 
     def target_derivative_math(self, order : int):
         if order == 0:
-            return f"{self.target_name}({self.parameter})"
+            return f"{self.target_name}({self.variable})"
         elif order == 1:
-            return f"d{self.target_name}/d{self.parameter}"
-        return f"d^{order}{self.target_name}/d{self.parameter}^{order}"
+            return f"d{self.target_name}/d{self.variable}"
+        return f"d^{order}{self.target_name}/d{self.variable}^{order}"
     def target_derivative_python(self, order : int):
         if order == 0:
             return self.target_name
         elif order == 1:
-            return f"d{self.target_name}d{self.parameter}"
-        return f"d{order}{self.target_name}d{self.parameter}{order}"
+            return f"d{self.target_name}d{self.variable}"
+        return f"d{order}{self.target_name}d{self.variable}{order}"
 
     def generate_scipy_string(self, plot = True, steps = 50, **kwargs):
         """
@@ -193,8 +214,12 @@ class NumericalODESolver:
         wh = "    "
 
         res = "import numpy as np, scipy, matplotlib.pyplot as plt\n\n"
-
-        res += f"def system({self.parameter}, y):\n"
+        
+        if self.k > 0:
+            res += f"def system({self.variable}, y, p):\n"
+            res += f"{wh}{', '.join(f'{p}' for p in self.parameters)} = p\n"
+        else:
+            res += f"def system({self.variable}, y):\n"
         res += f"{wh}{", ".join(self.target_derivative_python(order) for order in range(self.highest_derivative))} = y\n"
         
         if self.highest_derivative == 1:
@@ -206,22 +231,28 @@ class NumericalODESolver:
             res += f"{wh * 2}{self.dequation}\n"
             res += f"{wh}]\n\n"
 
-        res += "def bc(ya, yb):\n"
+        if self.k > 0:
+            res += "def bc(ya, yb, p):\n"
+            res += f"{wh}{', '.join(f'{p}' for p in self.parameters)} = p\n"
+        else:
+            res += "def bc(ya, yb):\n"
         res += f"{wh}{", ".join(f"{self.target_derivative_python(order)}_a" for order in range(self.highest_derivative))} = ya\n"
         res += f"{wh}{", ".join(f"{self.target_derivative_python(order)}_b" for order in range(self.highest_derivative))} = yb\n"
         res += f"{wh}return (\n{wh * 2}"
         res += f",\n{wh * 2}".join(self.bcs)
         res += f"\n{wh})\n\n"
 
-        res += f"{self.parameter} = np.linspace({self.interval[0]}, {self.interval[1]}, {steps})    # from, to, steps\n"
-        res += f"initial_guess = np.zeros(({self.highest_derivative}, {self.parameter}.size))\n"
+        res += f"{self.variable} = np.linspace({self.interval[0]}, {self.interval[1]}, {steps})    # from, to, steps\n"
+        res += f"initial_guess = np.zeros(({self.highest_derivative}, {self.variable}.size))\n"
         for order, guess in enumerate(self.initial_guess):
             res += f"initial_guess[{order}] = {guess}    # initial guess for {self.target_derivative_math(order)}\n"
+        if self.k > 0:
+            res += f"parameters_initial_guess = \n"
         res += "\n"
 
-        res += f"solution = scipy.integrate.solve_bvp(system, bc, {self.parameter}, initial_guess, {', '.join(f'{key}={val}' for key, val in kwargs.items())})\n"
+        res += f"solution = scipy.integrate.solve_bvp(system, bc, {self.variable}, initial_guess, {', '.join(f'{key}={val}' for key, val in kwargs.items())})\n"
         
-        res += f"{self.parameter}_sol = solution.x\n"
+        res += f"{self.variable}_sol = solution.x\n"
         res += f"{" ".join(f"{self.target_derivative_python(order)}_sol," for order in range(self.highest_derivative))} = solution.y\n"
 
         res += "if not solution.success:\n"
@@ -233,8 +264,8 @@ class NumericalODESolver:
 
             for order in range(self.highest_derivative):
                 res += f"{wh}plt.subplot(1, {self.highest_derivative}, {order + 1})\n"
-                res += f"{wh}plt.plot({self.parameter}_sol, {self.target_derivative_python(order)}_sol, label=\"{self.target_derivative_math(order)}\")\n"
-                res += f"{wh}plt.xlabel(\"{self.parameter}\")\n"
+                res += f"{wh}plt.plot({self.variable}_sol, {self.target_derivative_python(order)}_sol, label=\"{self.target_derivative_math(order)}\")\n"
+                res += f"{wh}plt.xlabel(\"{self.variable}\")\n"
                 res += f"{wh}plt.ylabel(\"{self.target_derivative_math(order)}\")\n"
                 res += f"{wh}plt.legend()\n\n"
 
@@ -330,8 +361,9 @@ if __name__ == "__main__":
 
     ode = NumericalODESolver(ode="v*v' = -K_p*dv/dx*d2v/dx2-λ(Reynolds(v))*v**2/2*L/d+d/Re_0/L*v''-K_g*math.sin(alpha)",
                                  interval=(0, 1),
-                                 bcs=("v(1)=0", "K_p * v'(0)**2 = pumpendruck/(rho*U**2/2)"),
-                                 initial_guess=("U - U * x", -U))
+                                 bcs=("v(1)=0", "K_p * v'(0)**2 = pumpendruck/(rho*U**2/2)", "v'(1)=0"),
+                                 initial_guess=("U - U * x", -U),
+                                 params=("p",))
 
 
     #ode.run_scipy(steps = n, max_nodes=50000, verbose=2)
