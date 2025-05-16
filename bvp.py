@@ -2,7 +2,7 @@
 
 
 
-class NumericalODESolver:
+class BVP:
     """
     A wrapper around scipy.integrate.solve_bvp() to solve a boundary value problem (BVP) for an ordinary differential equation (ODE).
     See https://docs.scipy.org/doc/scipy/reference/generated/scipy.integrate.solve_bvp.html for details.
@@ -142,7 +142,7 @@ class NumericalODESolver:
         # initial guess
         if initial_guess is None:
             initial_guess = 0
-        if not isinstance(initial_guess, tuple):
+        if not isinstance(initial_guess, (tuple, list)):
             initial_guess = [initial_guess]
         initial_guess = list(initial_guess)
         if len(initial_guess) < self.highest_derivative:
@@ -153,15 +153,15 @@ class NumericalODESolver:
         # parameters
         if params is None:
             params = ()
-        elif not isinstance(params, tuple):
+        elif not isinstance(params, (tuple, list)):
             params = (params, )
-        self.parameters = params
+        self.parameters = tuple(params)
         self.k = len(self.parameters)
 
         # initial guess for parameters
         if params_initial_guess is None:
-            params_initial_guess = 0
-        if not isinstance(params_initial_guess, tuple):
+            params_initial_guess = []
+        elif not isinstance(params_initial_guess, (tuple, list)):
             params_initial_guess = [params_initial_guess]
         params_initial_guess = list(params_initial_guess)
         if len(params_initial_guess) < self.k:
@@ -206,7 +206,7 @@ class NumericalODESolver:
             return f"d{self.target_name}d{self.variable}"
         return f"d{order}{self.target_name}d{self.variable}{order}"
 
-    def generate_scipy_string(self, plot = True, steps = 50, **kwargs):
+    def generate_scipy_string(self, plot = False, steps = 50, **kwargs):
         """
         Generates a string containing python code which, if executed, solves the BVP.
         Either plug it into exec() or copy it to a new file and run it.
@@ -280,18 +280,15 @@ class NumericalODESolver:
         return res
 
 
-
 if __name__ == "__main__":
-    n = 2000
-    
-    init = np.vectorize(lambda x: 1 if x < 0.5 else -1)
-    ode = NumericalODESolver("y'' + k**2 * y = 0", (0, 1), ("y(0)=0", "y(1)=0", "y'(0) = k"), "init(x)", "k", 6)
+    # init = np.vectorize(lambda x: 1 if x < 0.5 else -1)
+    # ode = BVP("y'' + k**2 * y = 0", (0, 1), ("y(0)=0", "y(1)=0", "y'(0) = k"), "init(x)", "k", 6)
 
-    print(ode.generate_scipy_string(steps = n, max_nodes=50000, verbose=2))
-    exec(ode.generate_scipy_string(steps = n, max_nodes=50000, verbose=2))
+    # print(ode.generate_scipy_string(steps = n, max_nodes=50000, verbose=2))
+    # exec(ode.generate_scipy_string(steps = n, max_nodes=50000, verbose=2))
     
 
-    sys.exit()
+    # sys.exit()
     Reynolds = lambda v: v * d / nu
     def λ_impl(Re):
         Re = max(Re, 0.001)
@@ -323,13 +320,11 @@ if __name__ == "__main__":
     K_p = A**2 / A_D_s**2 * ceta / L**2
     K_g = g * L / U**2
 
-    ode = NumericalODESolver(ode="v*v' = -K_p*dv/dx*d2v/dx2-λ(Reynolds(v))*v**2/2*L/d+d/Re_0/L*v''-K_g*math.sin(alpha)",
+    ode = BVP(ode="v*v' = -K_p*dv/dx*d2v/dx2-λ(Reynolds(v))*v**2/2*L/d+d/Re_0/L*v''-K_g*math.sin(alpha)",
                                  interval=(0, 1),
-                                 bcs=("v(1)=0", "K_p * v'(0)**2 = pumpendruck/(rho*U**2/2)", "v(0)=0.7"),#
-                                 initial_guess=("U - U * x", -U),
-                                 params=("p",))
+                                 bcs=("v(1)=0", "K_p * v'(0)**2 = pumpendruck/(rho*U**2/2)"),
+                                 initial_guess=("U - U * x", -U))
 
-
-    #ode.run_scipy(steps = n, max_nodes=50000, verbose=2)
-    print(ode.generate_scipy_string(steps = n, max_nodes=50000, verbose=2))
-    exec(ode.generate_scipy_string(steps = n, max_nodes=50000, verbose=2))
+    s = ode.generate_scipy_string(plot = True, max_nodes=50000, verbose=2)
+    print(s)
+    exec(s)
