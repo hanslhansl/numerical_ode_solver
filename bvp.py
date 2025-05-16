@@ -194,6 +194,8 @@ class BVP:
         pass
 
     def _target_derivative_math(self, order : int):
+        return f"{self.target_name}{"'"*order}({self.variable})"
+
         if order == 0:
             return f"{self.target_name}({self.variable})"
         elif order == 1:
@@ -258,73 +260,59 @@ class BVP:
         res += f"solution = scipy.integrate.solve_bvp(system, bc, {self.variable}, initial_guess, {"parameters_initial_guess, " if self.k > 0 else ""} {', '.join(f'{key}={val}' for key, val in kwargs.items())})\n"
         
         res += f"{self.variable}_sol = solution.x\n"
-        res += f"{" ".join(f"{self._target_derivative_python(order)}_sol," for order in range(self.highest_derivative))} = solution.y\n"
+        res += " ".join(f"{self._target_derivative_python(order)}_sol," for order in range(self.highest_derivative)) + " = solution.y\n"
+        res += f"{self._target_derivative_python(self.highest_derivative)}_sol = solution.yp[-1]\n"
+        if self.k > 0:
+            res += " ".join(f"{p}_sol," for p in self.parameters) + f" = solution.p\n"
 
-        res += "if not solution.success:\n"
-        res += wh + "print(f\"{solution.message = }\")\n\n"
+        res += "\nif not solution.success:\n"
+        res += wh + "# error\n"
+        res += wh + "print(f\"{solution.message = }\")\n"
 
         if plot == True:
-            res += "else:    # plot\n"
+            res += "else:\n"
+            res += wh + "# plot\n"
             res += wh + "plt.figure()\n\n"
 
-            for order in range(self.highest_derivative):
-                res += f"{wh}plt.subplot(1, {self.highest_derivative}, {order + 1})\n"
+            for order in range(self.highest_derivative+1):
+                res += f"{wh}plt.subplot(1, {self.highest_derivative+1}, {order + 1})\n"
                 res += f"{wh}plt.plot({self.variable}_sol, {self._target_derivative_python(order)}_sol, label=\"{self._target_derivative_math(order)}\")\n"
                 res += f"{wh}plt.xlabel(\"{self.variable}\")\n"
                 res += f"{wh}plt.ylabel(\"{self._target_derivative_math(order)}\")\n"
                 res += f"{wh}plt.legend()\n\n"
 
             res += wh + "plt.tight_layout()\n"
-            res += wh + "plt.show()\n\n"
+            res += wh + "plt.show()\n"
 
         return res
 
 
 if __name__ == "__main__":
-    # init = np.vectorize(lambda x: 1 if x < 0.5 else -1)
-    # ode = BVP("y'' + k**2 * y = 0", (0, 1), ("y(0)=0", "y(1)=0", "y'(0) = k"), "init(x)", "k", 6)
-
-    # print(ode.generate_scipy_string(steps = n, max_nodes=50000, verbose=2))
-    # exec(ode.generate_scipy_string(steps = n, max_nodes=50000, verbose=2))
+    """
+    Solving for y and parameter k:
+        y'' + k**2 * y = 0
     
+    Expected solution:
+        y = c1*sin(k*x) + c2*cos(k*x)
 
-    # sys.exit()
-    Reynolds = lambda v: v * d / nu
-    def λ_impl(Re):
-        Re = max(Re, 0.001)
-        iterative = lambda lambda_guess: 1 / math.sqrt(lambda_guess[0]) + 2 * math.log10(2.51 / Re / math.sqrt(lambda_guess[0]) + k / d / 3.71)
-        if Re <= 2300:
-            return 64 / Re
-        return scipy.optimize.fsolve(iterative, 0.02)[0]
-    λ = np.vectorize(λ_impl)
+    Boundary conditions:
+        y(0) = 0,
+        y(1) = 0,
+        y'(0) = k
+    
+    Solution:
+        y = sin(k*x)
+        k = n*pi, n = 0, 1, 2, ...
+    """
 
-    nozzles = 100
-    pumpendruck = 4*10**5
-    g = 9.81
-    L = 100.0
-    d = 0.03
-    d_D = 0.51 * 10**-3
-    alpha = np.pi / 8
-    V_0 = 1.5 * 10**-4
-    k = 0.15 * 10**-3 # Rauheit, schätzwert von wikipedia
-    nu = 10**-6
-    rho = 1000
-    dp = 4 * 10**5
-    V_D = V_0 / nozzles
-    A = d**2 * np.pi / 4
-    A_D_s = d_D**2 * np.pi / 4
-    U = V_0 / A
-    u_D = V_D / (d_D**2 * np.pi / 4)
-    ceta = dp / (rho * u_D**2 / 2)
-    Re_0 = Reynolds(U)
-    K_p = A**2 / A_D_s**2 * ceta / L**2
-    K_g = g * L / U**2
-
-    ode = BVP(ode="v*v' = -K_p*dv/dx*d2v/dx2-λ(Reynolds(v))*v**2/2*L/d+d/Re_0/L*v''-K_g*math.sin(alpha)",
-                                 interval=(0, 1),
-                                 bcs=("v(1)=0", "K_p * v'(0)**2 = pumpendruck/(rho*U**2/2)"),
-                                 initial_guess=("U - U * x", -U))
-
-    s = ode.generate_scipy_string(plot = True, max_nodes=50000, verbose=2)
+    init = np.vectorize(lambda x: 1 if x > 0.5 else -1)
+    ode = BVP(ode="y'' + k**2 * y = 0",
+              interval=(0, 1),
+              bcs=("y(0)=0", "y(1)=0", "y'(0) = k"),
+              initial_guess="init(x)",
+              params="k", params_initial_guess=6)
+    s = ode.generate_scipy_string(plot=True)
     print(s)
     exec(s)
+
+    print(k_sol)
