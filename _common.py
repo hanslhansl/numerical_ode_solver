@@ -84,7 +84,8 @@ class ODESolverBase:
 
         # reinsert object access syntax
         odes.clear()
-        for sympy_dequation in sympy_dequations.values():
+        for target, sympy_dequation in sympy_dequations.items():
+            print(f"{target}: {sympy_dequation}")
             ode = str(sympy_dequation)
             for original, temp in object_access_list:
                 ode = ode.replace(temp, original)
@@ -139,15 +140,14 @@ class ODESolverBase:
         res += wh + "]\n\n"
 
         return res
-    def _variable_linspace(self, steps : None | int):
-        if steps != None:
-            return f"{self.variable} = np.linspace({self.interval[0]}, {self.interval[1]}, {steps})    # from, to, steps\n"
-        return ""
-    def _solution(self):
+    def _solution(self, param_name : str, has_params : bool):
         res = ""
 
-        res += f"{self.variable}_sol = solution.t\n"
-        res += " ".join(target + f"_sol," for target in self._all_targets) + " = solution.y\n"
+        res += f"{self.variable} = solution.{param_name}\n"
+        res += " ".join(target + f"," for target in self._all_targets_python) + " = solution.y\n"
+
+        if has_params:
+            res += " ".join(f"{p}," for p in self.parameters) + f" = solution.p\n"
 
         return res
     def _error_and_plot_string(self, plot : bool, plot_highest_derivative : bool):
@@ -167,7 +167,7 @@ class ODESolverBase:
             for target, max_order in self.targets.items():
                 for order in range(max_order+plot_highest_derivative):
                     res += f"{wh}plt.subplot(1, {self.n+len(self.targets)*plot_highest_derivative}, {i})\n"
-                    res += f"{wh}plt.plot({self.variable}_sol, {self._derivative_python(target, order)}_sol, label=\"{self._derivative_math(target, order)}\")\n"
+                    res += f"{wh}plt.plot({self.variable}, {self._derivative_python(target, order)}, label=\"{self._derivative_math(target, order)}\")\n"
                     res += f"{wh}plt.xlabel(\"{self.variable}\")\n"
                     res += f"{wh}plt.ylabel(\"{self._derivative_math(target, order)}\")\n"
                     res += f"{wh}plt.legend()\n\n"

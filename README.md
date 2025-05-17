@@ -22,23 +22,26 @@ exec(s)
 
 
 """
-Boundary value problem on (0, 1):
-    y''(x) + y = 0
+Boundary value problem on (0, 1) with unknown k:
+    y''(x) + y = k
     
 Boundary conditions:
     y(0) = 0
     y(1) = 1
-    
+    y'(0) = 1
+
 Solution:
-    y(x) = csc(1) * sin(x)
+    y(x) = csc(1) * sin(x) - k
 """
-ode = nos.BVP(odes="y'' + y = 0",
+ode = nos.BVP(odes="y'' + y = k",
             interval=(0, 1),
-            bcs=("y(0)=0", "y(1)=1"),
-            initial_guess=(1, 1))
+            bcs=("y(0)=0", "y(1)=1", "y'(0)=0"),
+            initial_guess=(0, 0),
+            params="k")
 s = ode.generate_scipy_string(plot=plot)
 print(s)
 exec(s)
+print(f"k = {k}\n")
 
 
 """

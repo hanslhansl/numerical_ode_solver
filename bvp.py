@@ -153,7 +153,7 @@ class BVP(ODESolverBase):
         res += f",\n{wh * 2}".join(self.bcs)
         res += f"\n{wh}]\n\n"
 
-        res += self._variable_linspace(steps)
+        res += f"{self.variable} = np.linspace({self.interval[0]}, {self.interval[1]}, {steps})    # from, to, steps\n"
         res += f"initial_guess = np.zeros(({self.n}, {self.variable}.size))\n"
         for i, (guess, target) in enumerate(zip(self.initial_guess, self._all_targets_python)):
             if guess != 0:
@@ -163,12 +163,11 @@ class BVP(ODESolverBase):
         res += "\n"
 
         res += f"solution = scipy.integrate.solve_bvp(system, bc, {self.variable}, initial_guess{", parameters_initial_guess" if self.k > 0 else ""}{''.join(f', {key}={val}' for key, val in kwargs.items())})\n"
-
-        res += f"{self.variable}_sol = solution.x\n"
-        res += " ".join(target + f"_sol," for target in self._all_targets_python) + " = solution.y\n"
-        res += " ".join(derivative + f"_sol," for derivative in self._all_derivatives) + " = solution.yp\n"
-        if self.k > 0:
-            res += " ".join(f"{p}_sol," for p in self.parameters) + f" = solution.p\n"
+        
+        res += self._solution("x", self.k > 0)
+        res += " ".join(derivative + f"," for derivative in self._all_derivatives) + " = solution.yp\n"
+        # if self.k > 0:
+        #     res += " ".join(f"{p}," for p in self.parameters) + f" = solution.p\n"
 
         res += self._error_and_plot_string(plot, True)
 

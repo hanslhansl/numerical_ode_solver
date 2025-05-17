@@ -64,13 +64,14 @@ class IVP(ODESolverBase):
         
         res += self._system(False)
 
-        res += self._variable_linspace(steps)
+        if steps != None:
+            res += f"t_eval = np.linspace({self.interval[0]}, {self.interval[1]}, {steps})    # from, to, steps\n"
         res += f"initial_state = [{", ".join(str(s) for s in self.initial_state)}]    # initial state for {", ".join(self._all_targets_math)}\n\n"
 
-        res += f"solution = scipy.integrate.solve_ivp(system, {self.interval}, initial_state{f", t_eval={self.variable}" if steps != None else ""}{''.join(f', {key}={val}' for key, val in kwargs.items())})\n"
+        res += f"solution = scipy.integrate.solve_ivp(system, {self.interval}, initial_state{f", t_eval=t_eval" if steps != None else ""}{''.join(f', {key}={val}' for key, val in kwargs.items())})\n"
 
-        res += f"{self.variable}_sol = solution.t\n"
-        res += " ".join(target + f"_sol," for target in self._all_targets_python) + " = solution.y\n"
+        res += self._solution("t", False)
+        #for target, order in self.targets.items():
 
         res += self._error_and_plot_string(plot, False)
 
