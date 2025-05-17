@@ -1,6 +1,8 @@
 examples:
 
 ```Python
+import numerical_ode_solver as nos, numpy as np
+
 """
 Initial value problem on (0, 5):
     y''(x) + 2 * (x) = 0
