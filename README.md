@@ -31,7 +31,8 @@ Boundary conditions:
     y'(0) = 1
 
 Solution:
-    y(x) = csc(1) * sin(x) - k
+    y(x) = cos(x) / (cos(1) - 1) + k)
+    k = 1 / (1 - cos(1)
 """
 ode = nos.BVP(odes="y'' + y = k",
             interval=(0, 1),
