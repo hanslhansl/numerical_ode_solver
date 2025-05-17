@@ -2,6 +2,7 @@ examples:
 
 ```Python
 import numerical_ode_solver as nos, numpy as np
+plot = True
 
 """
 Initial value problem on (0, 5):
@@ -54,8 +55,12 @@ Boundary conditions:
     z(1) = 0
     
 Solution:
-    y(x) = 
-    z(x) = 
+    y(x) = c_2 * sin(x) + c_1 * cos(x) + 1/2 * ((x - 1) * cos(x) - x * sin(x))
+    z(x) = c_4 * x + c_2 * (x - sin(x)) + c_1 * (1 - cos(x)) + c_3 + 1/2 * ((x + 2) * sin(x) - (x - 1) * cos(x))
+    c_1 = 1/2
+    c_2 = (1 + 1/2 * sin(1) - c_1 * cos(1)) / sin(1)
+    c_3 = -1/2
+    c_4 = c_2 * (sin(1) - 1) + c_1 * (cos(1) - 1) - c_3 - 3/2 * sin(1)
 """
 ode = nos.BVP(odes=("y'' + z'' = -np.sin(x)", "z'' - y = np.cos(x)"),
             interval=(0, 1),
