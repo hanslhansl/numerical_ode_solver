@@ -4,9 +4,64 @@ from _common import *
 
 class BVP(ODESolverBase):
     """
-    A wrapper around scipy.integrate.solve_bvp() to solve a boundary value problem (BVP) for an ordinary differential equation (ODE).
+    A wrapper around scipy.integrate.solve_bvp() to solve a boundary value problem (BVP) for a system of ordinary differential equations (ODEs).
     See https://docs.scipy.org/doc/scipy/reference/generated/scipy.integrate.solve_bvp.html for details.
-    It simplifies the process of defining the ODE, boundary conditions and initial guess.
+    It simplifies the process of defining the ODEs, boundary conditions and initial guess.
+
+    Regarding syntax
+    ----------------
+    Several of the parameters are passed as string containg python-like code representing mathematical expressions.
+    For the most part these strings are interpreted as normal python code and therefor have to obey python syntax rules, i.e.:
+    - 'a' to the power of 'b' is 'a**b'
+    - Mathematical brackets are '(' and ')'. '[]' and '{}' can be used but retain their 'python meaning'.
+    - Names can contain digits but can't start with a digit.
+    - Constants, variables, and function calls are supported, but they must be available in the current scope - typically as global definitions.
+
+    The target variable is denoted as a valid python identifier like 'x', 'x1', 'z' etc.
+
+    A target function is denoted as a valid python identifier like 'y', 'v', 'v1', 'v_1', 'foo', 'bar' etc.
+    Invalid examples: 'y(x)' (the variable 'x' must not be specified with the function), '1y' (starts with a digit).
+
+    The exception to the python syntax rules are the derivatives of the target function(s): There are two ways to denote the derivative:
+    - Leibnitz notation: The derivative of 'y' by variable 'x' is denoted as 'dy/dx'. The second derivative is denoted either as 'd2y/dx2' or 'd^2y/dx^2' etc.
+        Invalid examples: 'dy/dx(x)' (the variable 'x' must not be specified with the derivative), 'd2y/d3x' (incorrect derivative order)
+    - Prime notation: The derivatives of 'y' are denoted as y', y'', y''' etc.
+        Invalid example: "y'(x)" (the variable 'x' must not be specified with the derivative)
+          
+    Parameters
+    ----------
+    odes: The ordinary differential equation(s).
+        Used to define a callback passed as parameter 'fun' to solve_bvp().
+        See above for syntax rules.
+        If only prime notation is used 'x' is used as the default variable name.
+        E.g.: "y' = 2 * y + 1", "dy/dx = 2 * y + 1", "y + y' + d^2y/dx^2 = np.sin(x)"
+            
+    interval: The interval to solve the ode(s) in.
+        Used to initialize a grid which is passed as parameter 'x' to solve_bvp().
+        E.g.: (0, 1); ('a', 'b')
+
+    bcs: The boundary condition(s) for the target function(s) and all but its highest order derivative.
+        Used to define a callback passed as parameter 'bc' to solve_bvp().
+        See above for general syntax rules.
+        A bc must be an equation containing a target function and/or any of its derivatives (using prime notation) evaluated at one of the interval boundaries.
+        Valid examples for interval (0, 1): "y(1)=5", "K_p * y'(0)**2 = 2 * p / (r * U**2) - y(0)"
+        Invalid examples: "y=5" (no boundary specified), "dy/dx(1)=0" (can't use Leibnitz notation for bcs)
+
+    initial_guess: The initial guess for the target function(s) and all but the highest order derivative(s).
+        Used to initialize the initial guess for the solution passed as parameter 'y' to solve_bvp().
+        See above for general syntax rules.
+        Can make use of the target variable (e.g. 'x'). The variable will have type 'numpy.ndarray'.
+        Therefor, math functions from module 'numpy' should be prefered over those from module 'math'.
+        If no initial guess is provided it is set to 0 for the target function(s) and all derivatives.
+        Valid examples for target variable "x": (0, 17); "x"; ("x**2", "U - U * x")
+
+    params: Names of the unknown parameters. If None (default), it is assumed that the problem doesn't depend on any parameters.
+        E.g.: ("a", "b", "c")
+
+    params_initial_guess: The initial guess for the unknown parameters (if any).
+        Used to initialize the initial guess for the parameters passed as parameter 'p' to solve_bvp().
+        If no initial guess is provided it is set to 0 for all parameters.
+        E.g.: (0, 1, 2)
     """
 
     def __init__(self, odes : str | tuple[str,...],
@@ -15,71 +70,16 @@ class BVP(ODESolverBase):
                  initial_guess : None | str | int | float | tuple[str | int | float,...] = None,
                  params : None | str | tuple[str,...] = None,
                  params_initial_guess : None | str | int | float | tuple[str | int | float,...] = None):
-        """
-        Regarding syntax
-        --------------------
-        Several of the parameters are passed as string containg python-like code representing mathematical expressions.
-        For the most part these strings are interpreted as normal python code and therefor have to obey python syntax rules, i.e.:
-        - 'a' to the power of 'b' is 'a**b'
-        - Mathematical brackets are '(' and ')'. '[]' and '{}' can be used but retain their 'python meaning'.
-        - Names can contain digits but can't start with a digit.
-        - Constants, variables, and function calls are supported, but they must be available in the current scope - typically as global definitions.
-
-        The target variable is denoted as a valid python identifier like 'x', 'x1', 'z' etc.
-
-        A target function is denoted as a valid python identifier like 'y', 'v', 'v1', 'v_1', 'foo', 'bar' etc.
-        Invalid examples: 'y(x)' (the variable 'x' must not be specified with the function), '1y' (starts with a digit).
-
-        The exception to the python syntax rules are the derivatives of the target function(s): There are two ways to denote the derivative:
-        - Leibnitz notation: The derivative of 'y' by variable 'x' is denoted as 'dy/dx'. The second derivative is denoted either as 'd2y/dx2' or 'd^2y/dx^2' etc.
-          Invalid examples: 'dy/dx(x)' (the variable 'x' must not be specified with the derivative), 'd2y/d3x' (incorrect derivative order)
-        - Prime notation: The derivatives of 'y' are denoted as y', y'', y''' etc.
-          Invalid example: "y'(x)" (the variable 'x' must not be specified with the derivative)
-          If only prime notation is used 'x' is used as the default variable name.
-          
-        Parameters
-        ----------
-        odes: The ordinary differential equation(s).
-            See above for syntax rules.
-            E.g.: "y' = 2 * y + 1", "dy/dx = 2 * y + 1", "y + y' + d^2y/dx^2 = np.sin(x)"
-            
-        interval: The interval to solve the ode in.
-            E.g.: (0, 1); ("a", "b")
-
-        bcs: The boundary condition(s) for the target function(s) and all but its highest order derivative.
-            See above for general syntax rules.
-            A bc must be an equation containing a target function and/or any of its derivatives (using prime notation) evaluated at one of the interval boundaries.
-            Valid examples for interval (0, 1): "y(1)=5", "K_p * y'(0)**2 = 2 * p / (r * U**2) - y(0)"
-            Invalid examples: "y=5" (no boundary specified), "dy/dx(1)=0" (can't use Leibnitz notation for bcs)
-
-        initial_guess: The initial guess for the target function(s) and all but the highest order derivative(s).
-            See above for general syntax rules.
-            Can make use of the target variable (e.g. 'x'). The variable will have type 'numpy.ndarray'.
-            Therefor, math functions from module 'numpy' should be prefered over those from module 'math'.
-            If no initial guess is provided it is set to 0 for the target function(s) and all derivatives.
-            Valid examples for target variable "x": (0, 17); "x"; ("x**2", "U - U * x")
-
-        params: Names of the unknown parameters. If None (default), it is assumed that the problem doesn't depend on any parameters.
-            E.g.: ("a", "b", "c")
-
-        params_initial_guess: The initial guess for the unknown parameters (if any).
-            If no initial guess is provided it is set to 0 for all parameters.
-            E.g.: (0, 1, 2)
-        """
-        super().__init__(odes, interval, default_variable="x")
         
+        super().__init__(odes, interval, default_variable="x")
+
         # initial guess
-        # if initial_guess is None:
-        #     initial_guess = 0
-        # if not isinstance(initial_guess, (tuple, list)):
-        #     initial_guess = [initial_guess]
-        # initial_guess = list(initial_guess)
-        # if len(initial_guess) < self.highest_derivative:
-        #     initial_guess.extend([0] * (self.highest_derivative - len(initial_guess)))
-        # assert len(initial_guess) == self.highest_derivative, f"wrong number of initial guesses ({len(initial_guess)}), should be {self.highest_derivative}"
-        # self.initial_guess = tuple(initial_guess)
-        assert initial_guess == None, "not implemented yet"
-        self.initial_guess = tuple(0 for _ in range(self.n))
+        if initial_guess is None:
+            initial_guess = 0
+        if not isinstance(initial_guess, (tuple, list)):
+            initial_guess = [initial_guess] * self.n
+        self.initial_guess = tuple(initial_guess)
+        assert len(self.initial_guess) == self.n, f"wrong number of initial guesses ({len(self.initial_guess)}), should be {self.n}"
         
         # parameters
         if params is None:
