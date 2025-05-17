@@ -1,5 +1,3 @@
-examples:
-
 ```Python
 import numerical_ode_solver as nos, numpy as np
 plot = True
