@@ -1,6 +1,7 @@
 examples:
 
-
+```Python
+"""
 Initial value problem on (0, 5):
     y''(x) + 2 * (x) = 0
 
@@ -10,14 +11,14 @@ Initial state:
     
 Solution:
     y(x) = cos(sqrt(2) * t)
-```Python
+"""
 ode = nos.IVP(odes="y''+2*y=0",
           interval=(0, 5),
           initial_state=(1, 0))
 s = ode.generate_scipy_string(plot=plot, steps=50)
 print(s)
 exec(s)
-```
+
 
 """
 Boundary value problem on (0, 1):
