@@ -76,11 +76,3 @@ class IVP(ODESolverBase):
 
         return res
 
-
-if __name__ == "__main__":
-    ode = IVP(odes="y''+2*y=0",
-              interval=(0, 5),
-              initial_state=(1, 0))
-    s = ode.generate_scipy_string(plot=True, steps=50)
-    print(s)
-    exec(s)
