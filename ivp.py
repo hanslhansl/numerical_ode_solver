@@ -1,5 +1,5 @@
 import scipy.integrate, re, sympy, numpy as np, sys, math, matplotlib.pyplot as plt
-from _common import *
+from ._common import *
 
 
 class IVP(ODESolverBase):
@@ -78,8 +78,7 @@ class IVP(ODESolverBase):
 
 
 if __name__ == "__main__":
-    w = 2
-    ode = IVP(odes="y''+w**2*y=0",
+    ode = IVP(odes="y''+2*y=0",
               interval=(0, 5),
               initial_state=(1, 0))
     s = ode.generate_scipy_string(plot=True, steps=50)

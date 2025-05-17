@@ -1,5 +1,5 @@
 ﻿import scipy, re, sympy, numpy as np, sys, matplotlib.pyplot as plt
-from _common import *
+from ._common import *
 
 
 class BVP(ODESolverBase):
