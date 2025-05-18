@@ -32,7 +32,7 @@ class ODESolverBase:
             assert self.variable is not None
             
             odes[ode_i] = odes[ode_i].replace(full_match, self._derivative_python(target, order), 1)
-
+            
         # replace derivatives with python syntax
         if not isinstance(odes, (tuple, list)):
             odes = [odes]
@@ -50,13 +50,14 @@ class ODESolverBase:
                 order1, target, var, order2 = match.groups()
                 assert order1 == order2, f"could not parse '{match.group()}'"
                 set_fields(i, target, var, int(order1), match)
-            if self.variable is None:
-                self.variable = default_variable
+        if self.variable is None:
+            self.variable = default_variable
+        for i, ode in enumerate(odes):
             for match in re.finditer(derivative_prime_notation_pattern, ode):
                 target, apostrophes = match.groups()
                 set_fields(i, target, None, len(apostrophes), match)
         self.n = sum(order for order in self.targets.values())
-        assert len(self.targets) == len(odes), f"found {len(self.targets)} but expected {len(odes)} target functions in the ode(s)"
+        assert len(self.targets) == len(odes), f"found {len(self.targets)} target function(s) ({", ".join(self._derivative_math(target, 0) for target in self.targets.keys())}) but expected {len(odes)}"
 
         # find object access syntax
         object_access_list = []
@@ -85,8 +86,7 @@ class ODESolverBase:
         # reinsert object access syntax
         odes.clear()
         for target, sympy_dequation in sympy_dequations.items():
-            print(f"{target}: {sympy_dequation}")
-            ode = str(sympy_dequation)
+            ode = str(sympy_dequation.simplify())
             for original, temp in object_access_list:
                 ode = ode.replace(temp, original)
             odes.append(ode)
@@ -132,7 +132,7 @@ class ODESolverBase:
         else:
             res += f"def system({self.variable}, y):\n"
         res += f"{wh}{"".join(target + ', ' for target in self._all_targets_python)}= y\n"
-
+        
         res += wh + "return [\n"
         for target, max_order in self.targets.items():
             res += "".join(f"{wh * 2}{self._derivative_python(target, order)},\n" for order in range(1, max_order))
@@ -142,7 +142,8 @@ class ODESolverBase:
         return res
     def _solution(self, param_name : str, has_params : bool):
         res = ""
-
+        
+        #res += f"del {self.variable}\n"
         res += f"{self.variable} = solution.{param_name}\n"
         res += " ".join(target + f"," for target in self._all_targets_python) + " = solution.y\n"
 

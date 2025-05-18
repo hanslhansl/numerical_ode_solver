@@ -11,11 +11,13 @@ class BVP(ODESolverBase):
     Regarding syntax
     ----------------
     Several of the parameters are passed as string containg python-like code representing mathematical expressions.
-    For the most part these strings are interpreted as normal python code and therefor have to obey python syntax rules, i.e.:
+    These strings are not allowed to contain unicode characters. Otherwise, for the most part they are interpreted as normal python code and therefor have to obey python syntax rules, i.e.:
     - 'a' to the power of 'b' is 'a**b'
     - Mathematical brackets are '(' and ')'. '[]' and '{}' can be used but retain their 'python meaning'.
     - Names can contain digits but can't start with a digit.
     - Constants, variables, and function calls are supported, but they must be available in the current scope - typically as global definitions.
+
+    
 
     The target variable is denoted as a valid python identifier like 'x', 'x1', 'z' etc.
 
@@ -47,7 +49,7 @@ class BVP(ODESolverBase):
         Valid examples for interval (0, 1): "y(1)=5", "K_p * y'(0)**2 = 2 * p / (r * U**2) - y(0)"
         Invalid examples: "y=5" (no boundary specified), "dy/dx(1)=0" (can't use Leibnitz notation for bcs)
 
-    initial_guess: The initial guess for the target function(s) and all but the highest order derivative(s).
+    initial_guess: The initial guess for the target function(s) and all but the highest order derivative(s) in alphabetical order (i.e. y, y', z, z', z'').
         Used to initialize the initial guess for the solution passed as parameter 'y' to solve_bvp().
         See above for general syntax rules.
         Can make use of the target variable (e.g. 'x'). The variable will have type 'numpy.ndarray'.
