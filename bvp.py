@@ -109,19 +109,19 @@ class BVP(ODESolverBase):
         expected_bcs = self.n + self.k
         assert len(bcs) == expected_bcs, f"wrong number of boundary conditions ({len(bcs)}), should be {expected_bcs}"
         for bc in bcs:
-            for target, order in self.targets.items():
-                for match in re.findall(fr"\b{target}('*)\((\w+)\)", bc):
+            for target in self.targets:
+                for match in re.findall(fr"\b{target.name}('*)\((\w+)\)", bc):
                     assert len(match) == 2, f"could not parse bc: '{bc}'"
                     apostrophes, parameter = match
                     derivative_order = len(apostrophes)
-                    assert derivative_order < order, f"bc contains derivative of order {derivative_order} (max is order {order-1})"
+                    assert derivative_order < target.highest_order, f"bc contains derivative of order {derivative_order} (max is order {target.highest_order-1})"
                     if parameter == str(self.interval[0]):
                         postfix = "a"
                     elif parameter == str(self.interval[1]):
                         postfix = "b"
                     else:
                         raise ValueError(f"boundary condition parameter {parameter} is not an endpoint of interval {self.interval}")
-                    bc = bc.replace(f"{target}{"'"*derivative_order}({parameter})", f"{self._derivative_python(target, derivative_order)}_{postfix}", 1)
+                    bc = bc.replace(f"{target.name}{"'"*derivative_order}({parameter})", f"{self._derivative_python(target.name, derivative_order)}_{postfix}", 1)
             lhs, rhs = bc.split("=")
             self.bcs.append(f"{lhs.strip()} - ({rhs.strip()})")
 

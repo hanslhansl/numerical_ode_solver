@@ -1,4 +1,4 @@
-import re, sympy
+import re, sympy,  dataclasses
 
 
 wh = "    "
@@ -10,6 +10,11 @@ higher_derivative_leibnitz_notation_pattern_b = rf"\bd\^([1-9][0-9]*)({identifie
 derivative_prime_notation_pattern = rf"\b({identifier_pattern})('+)"
 object_access_pattern_pattern = rf'\b(?:{identifier_pattern}\.)+{identifier_pattern}\b'
 
+@dataclasses.dataclass
+class Target:
+    name : str
+    highest_order : int
+    ode : None | str = None
 
 class ODESolverBase:
     def __init__(self, odes : str | tuple[str,...],
@@ -17,13 +22,16 @@ class ODESolverBase:
                  
                  default_variable):
 
-        self.targets : dict[str, int] = {}
         self.variable : str = None
-
+        
+        targets : dict[str, Target] = {}
         def set_fields(ode_i, target, var, order, full_match):
             full_match = full_match.group()
 
-            self.targets[target] = max(order, self.targets.get(target, order))
+            target = Target(target, order)
+            max_order = max(order, targets.get(target.name, target).highest_order)
+            target.highest_order = max_order
+            targets[target.name] = target
             
             if var is not None:
                 if self.variable is None:
@@ -31,7 +39,7 @@ class ODESolverBase:
                 assert self.variable == var, f"variable name '{self.variable}' does not match '{var}' in '{full_match}'"
             assert self.variable is not None
             
-            odes[ode_i] = odes[ode_i].replace(full_match, self._derivative_python(target, order), 1)
+            odes[ode_i] = odes[ode_i].replace(full_match, self._derivative_python(target.name, order), 1)
             
         # replace derivatives with python syntax
         if not isinstance(odes, (tuple, list)):
@@ -56,8 +64,9 @@ class ODESolverBase:
             for match in re.finditer(derivative_prime_notation_pattern, ode):
                 target, apostrophes = match.groups()
                 set_fields(i, target, None, len(apostrophes), match)
-        self.n = sum(order for order in self.targets.values())
-        assert len(self.targets) == len(odes), f"found {len(self.targets)} target function(s) ({", ".join(self._derivative_math(target, 0) for target in self.targets.keys())}) but expected {len(odes)}"
+        self.n = sum(target.highest_order for target in targets.values())
+        self.targets = tuple(target for target_name, target in sorted(targets.items()))
+        assert len(self.targets) == len(odes), f"found {len(targets)} target function(s) ({", ".join(self._derivative_math(target.name, 0) for target in self.targets)}) but expected {len(odes)}"
 
         # find object access syntax
         object_access_list = []
@@ -80,17 +89,23 @@ class ODESolverBase:
             lhs = sympy.parse_expr(lhs_str.strip())
             rhs = sympy.parse_expr(rhs_str.strip())
             parsed_equations.append(lhs - rhs)
-        sympy_dequations = sympy.solve(parsed_equations, [self._derivative_python(target, order) for target, order in self.targets.items()])
+        sympy_dequations = sympy.solve(parsed_equations, [self._derivative_python(target.name, target.highest_order) for target in self.targets])
         assert len(sympy_dequations) == len(self.targets)
 
         # reinsert object access syntax
-        odes.clear()
-        for target, sympy_dequation in sympy_dequations.items():
+        for derivative, sympy_dequation in sympy_dequations.items():
+            derivative = str(derivative)
             ode = str(sympy_dequation.simplify())
             for original, temp in object_access_list:
                 ode = ode.replace(temp, original)
-            odes.append(ode)
-        self.odes = odes
+
+            for target in self.targets:
+                if derivative == self._derivative_python(target.name, target.highest_order):
+                    assert target.ode == None, f"target '{target.name}' already has an ode '{target.ode}'"
+                    target.ode = ode
+                    break
+            else:
+                raise RuntimeError(f"could not find target for '{derivative}'")
 
         # interval
         assert len(interval) == 2, f"the interval '{interval}' must consist of 2 endpoints"
@@ -100,12 +115,6 @@ class ODESolverBase:
 
     def _derivative_math(self, target : str, order : int):
         return f"{target}{"'"*order}({self.variable})"
-        # leibnitz notation
-        # if order == 0:
-        #     return f"{target}({self.variable})"
-        # elif order == 1:
-        #     return f"d{target}/d{self.variable}"
-        # return f"d^{order}{target}/d{self.variable}^{order}"
     def _derivative_python(self, target : str, order : int):
         if order == 0:
             return target
@@ -115,13 +124,13 @@ class ODESolverBase:
 
     @property
     def _all_targets_python(self):
-        return [self._derivative_python(target, order) for target, max_order in self.targets.items() for order in range(max_order)]
+        return [self._derivative_python(target.name, order) for target in self.targets for order in range(target.highest_order)]
     @property
     def _all_targets_math(self):
-        return [self._derivative_math(target, order) for target, max_order in self.targets.items() for order in range(max_order)]
+        return [self._derivative_math(target.name, order) for target in self.targets for order in range(target.highest_order)]
     @property
     def _all_derivatives(self):
-        return [self._derivative_python(target, order) for target, max_order in self.targets.items() for order in range(1, max_order + 1)]
+        return [self._derivative_python(target.name, order) for target in self.targets for order in range(1, target.highest_order + 1)]
 
     def _system(self, with_p : bool):
         res = ""
@@ -134,9 +143,9 @@ class ODESolverBase:
         res += f"{wh}{"".join(target + ', ' for target in self._all_targets_python)}= y\n"
         
         res += wh + "return [\n"
-        for target, max_order in self.targets.items():
-            res += "".join(f"{wh * 2}{self._derivative_python(target, order)},\n" for order in range(1, max_order))
-        res += "".join(wh*2 + ode + ",\n" for ode in self.odes)
+        for target in self.targets:
+            res += "".join(f"{wh * 2}{self._derivative_python(target.name, order)},    # = {self._derivative_math(target.name, order)}\n" for order in range(1, target.highest_order))
+            res += f"{wh * 2}{target.ode},    # = {self._derivative_math(target.name, target.highest_order)}\n"
         res += wh + "]\n\n"
 
         return res
@@ -165,12 +174,12 @@ class ODESolverBase:
             res += wh + "plt.figure()\n\n"
 
             i = 1
-            for target, max_order in self.targets.items():
-                for order in range(max_order+plot_highest_derivative):
+            for target in self.targets:
+                for order in range(target.highest_order+plot_highest_derivative):
                     res += f"{wh}plt.subplot(1, {self.n+len(self.targets)*plot_highest_derivative}, {i})\n"
-                    res += f"{wh}plt.plot({self.variable}, {self._derivative_python(target, order)}, label=\"{self._derivative_math(target, order)}\")\n"
+                    res += f"{wh}plt.plot({self.variable}, {self._derivative_python(target.name, order)}, label=\"{self._derivative_math(target.name, order)}\")\n"
                     res += f"{wh}plt.xlabel(\"{self.variable}\")\n"
-                    res += f"{wh}plt.ylabel(\"{self._derivative_math(target, order)}\")\n"
+                    res += f"{wh}plt.ylabel(\"{self._derivative_math(target.name, order)}\")\n"
                     res += f"{wh}plt.legend()\n\n"
                     res += f"{wh}plt.grid(True)\n\n"
                     i += 1
